@@ -2,17 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>UVC Camera Tester</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
   <div class="app-container">
-    <!-- Header -->
+    <!-- Header Navbar -->
     <header class="app-header">
-      <div class="title-row">
-        <div class="badge">UVC TESTER</div>
-        <h1>Direct UsbFs Kernel Benchmark</h1>
+      <div class="header-left">
+        <span class="badge">UVC KERNEL</span>
+        <h1 class="header-title">Camera Tester</h1>
       </div>
       <div id="device-status-badge" class="status-pill disconnected">
         <span class="dot"></span>
@@ -20,94 +20,120 @@
       </div>
     </header>
 
-    <!-- Main Content Grid -->
-    <div class="content-grid">
-      <!-- Camera Viewport Area -->
-      <div class="viewport-wrapper">
-        <div class="viewport-box" id="camera-viewport">
-          <!-- Transparent cut-through window for native SurfaceView -->
-          <div class="viewport-placeholder" id="viewport-placeholder">
-            <div class="cam-icon">📹</div>
-            <div class="cam-text">Camera Preview Window</div>
-            <div class="cam-sub">Native SurfaceView will render here</div>
-          </div>
-          <div class="viewport-overlay">
-            <div class="live-pill" id="live-indicator" style="display: none;">
-              <span class="pulse-dot"></span> LIVE STREAMING
+    <!-- Main Responsive Container -->
+    <main class="main-layout">
+      <!-- Camera & Controls Section -->
+      <section class="left-section">
+        <!-- Live Viewport Container -->
+        <div class="viewport-card">
+          <div class="viewport-box" id="camera-viewport">
+            <div class="viewport-placeholder" id="viewport-placeholder">
+              <div class="placeholder-icon">📹</div>
+              <div class="placeholder-text">Camera Preview Window</div>
+              <div class="placeholder-sub">Native SurfaceView will render here</div>
             </div>
-            <div class="fps-pill" id="fps-indicator" style="display: none;">
-              0 FPS
+            
+            <!-- Live Overlays -->
+            <div class="viewport-overlays">
+              <div class="overlay-pill live-pill" id="live-indicator" style="display: none;">
+                <span class="pulse-dot"></span> LIVE
+              </div>
+              <div class="overlay-pill fps-pill" id="fps-indicator" style="display: none;">
+                0 FPS
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Action Controls -->
+        <!-- Controls Card -->
         <div class="controls-card">
-          <div class="control-row">
-            <button id="btn-request-usb" class="btn btn-primary">
-              🔌 1. Connect & Request USB
+          <!-- Primary Action Buttons (2x2 on Mobile, 4x1 on Desktop) -->
+          <div class="actions-grid">
+            <button id="btn-request-usb" class="btn btn-primary" type="button">
+              <span class="btn-icon">🔌</span>
+              <span class="btn-label">1. Request USB</span>
             </button>
-            <button id="btn-start-stream" class="btn btn-success" disabled>
-              ▶️ 2. Start Preview
+            <button id="btn-start-stream" class="btn btn-success" type="button" disabled>
+              <span class="btn-icon">▶️</span>
+              <span class="btn-label">2. Start Preview</span>
             </button>
-            <button id="btn-take-photo" class="btn btn-warning" disabled>
-              📸 3. Take Snapshot
+            <button id="btn-take-photo" class="btn btn-warning" type="button" disabled>
+              <span class="btn-icon">📸</span>
+              <span class="btn-label">3. Snapshot</span>
             </button>
-            <button id="btn-stop-stream" class="btn btn-danger" disabled>
-              ⏹️ Stop
+            <button id="btn-stop-stream" class="btn btn-danger" type="button" disabled>
+              <span class="btn-icon">⏹️</span>
+              <span class="btn-label">Stop Stream</span>
             </button>
           </div>
 
-          <div class="settings-row">
-            <div class="field-group">
-              <label for="resolution-select">Resolution:</label>
-              <select id="resolution-select">
-                <option value="1920x1080">1920x1080 (FHD)</option>
-                <option value="1280x720" selected>1280x720 (HD)</option>
-                <option value="640x480">640x480 (VGA)</option>
-              </select>
+          <!-- Settings Row -->
+          <div class="settings-grid">
+            <div class="form-group">
+              <label for="resolution-select">Resolution</label>
+              <div class="select-wrapper">
+                <select id="resolution-select">
+                  <option value="1920x1080">1920x1080 (FHD)</option>
+                  <option value="1280x720" selected>1280x720 (HD)</option>
+                  <option value="640x480">640x480 (VGA)</option>
+                </select>
+              </div>
             </div>
-            <div class="field-group">
-              <label for="format-select">Format:</label>
-              <select id="format-select">
-                <option value="MJPG" selected>MJPEG</option>
-                <option value="YUY2">YUY2 / NV12</option>
-              </select>
+
+            <div class="form-group">
+              <label for="format-select">Format</label>
+              <div class="select-wrapper">
+                <select id="format-select">
+                  <option value="MJPG" selected>MJPEG</option>
+                  <option value="YUY2">YUY2 / NV12</option>
+                </select>
+              </div>
             </div>
-            <div class="field-group checkbox-group">
-              <label>
+
+            <div class="form-group toggle-group">
+              <label class="checkbox-label">
                 <input type="checkbox" id="mirror-checkbox" />
-                Mirror Preview
+                <span class="checkbox-custom"></span>
+                <span>Mirror Feed</span>
               </label>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Right Column: Diagnostics & Captured Photos -->
-      <div class="side-panel">
-        <!-- Captured Snapshot Preview -->
+      <!-- Diagnostic & Output Section -->
+      <section class="right-section">
+        <!-- Captured Snapshot Card -->
         <div class="card snapshot-card">
           <div class="card-header">
-            <h3>Captured Photo</h3>
+            <div class="card-title">
+              <span>🖼️ Captured Photo</span>
+            </div>
             <span id="photo-dimensions" class="dim-badge">-</span>
           </div>
-          <div class="snapshot-preview-box" id="snapshot-box">
-            <span class="empty-text">No photo captured yet</span>
+          <div class="snapshot-body" id="snapshot-box">
+            <div class="empty-state">
+              <span>No photo captured yet</span>
+            </div>
             <img id="snapshot-img" src="" alt="Captured Frame" style="display: none;" />
           </div>
         </div>
 
-        <!-- Real-time Console Log -->
+        <!-- Real-time Diagnostic Log Card -->
         <div class="card console-card">
           <div class="card-header">
-            <h3>Diagnostic Event Log</h3>
-            <button id="btn-clear-log" class="btn-text">Clear</button>
+            <div class="card-title">
+              <span>📋 Diagnostic Log</span>
+            </div>
+            <div class="header-actions">
+              <button id="btn-copy-log" class="btn-action btn-copy" type="button">📋 Copy Log</button>
+              <button id="btn-clear-log" class="btn-action btn-clear" type="button">Clear</button>
+            </div>
           </div>
-          <div class="console-box" id="console-logs"></div>
+          <div class="console-body" id="console-logs"></div>
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
   </div>
 
   <script type="module" src="./main.js"></script>

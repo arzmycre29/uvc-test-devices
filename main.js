@@ -8,6 +8,7 @@ const btnStartStream = document.getElementById("btn-start-stream");
 const btnTakePhoto = document.getElementById("btn-take-photo");
 const btnStopStream = document.getElementById("btn-stop-stream");
 const btnClearLog = document.getElementById("btn-clear-log");
+const btnCopyLog = document.getElementById("btn-copy-log");
 
 const resolutionSelect = document.getElementById("resolution-select");
 const formatSelect = document.getElementById("format-select");
@@ -29,7 +30,7 @@ function log(msg, type = "info") {
   const time = new Date().toTimeString().split(" ")[0];
   const div = document.createElement("div");
   div.className = `log-entry log-${type}`;
-  div.textContent = `[${time}] ${msg}`;
+  div.textContent = `[${time}] [${type.toUpperCase()}] ${msg}`;
   consoleLogs.appendChild(div);
   consoleLogs.scrollTop = consoleLogs.scrollHeight;
 }
@@ -38,10 +39,47 @@ btnClearLog.addEventListener("click", () => {
   consoleLogs.innerHTML = "";
 });
 
+btnCopyLog.addEventListener("click", async () => {
+  const device = deviceNameText.textContent || "None";
+  const logEntries = Array.from(consoleLogs.querySelectorAll(".log-entry"))
+    .map((el) => el.textContent)
+    .join("\n");
+
+  const fullReport = `=== UVC TESTER DIAGNOSTIC REPORT ===
+Timestamp: ${new Date().toISOString()}
+User Agent: ${navigator.userAgent}
+Device Status: ${device}
+Selected Config: ${resolutionSelect.value} (${formatSelect.value}), Mirror: ${mirrorCheckbox.checked}
+--- EVENT LOGS (${consoleLogs.children.length} entries) ---
+${logEntries || "(No events logged yet)"}
+====================================`;
+
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(fullReport);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = fullReport;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+    btnCopyLog.textContent = "✅ Copied!";
+    btnCopyLog.classList.add("copied");
+    setTimeout(() => {
+      btnCopyLog.textContent = "📋 Copy Log";
+      btnCopyLog.classList.remove("copied");
+    }, 2500);
+  } catch (err) {
+    log(`Copy failed: ${err.message || err}`, "error");
+  }
+});
+
 async function checkDeviceState() {
   try {
     const res = await UvcTester.checkDevice();
-    log(`Check Device: connected=${res.connected}, permission=${res.permission}, name="${res.deviceName}"`, res.connected ? "info" : "warn");
+    log(`Device Check: connected=${res.connected}, perms=${res.permission}, runtimePerms=${res.runtimePermissions}, name="${res.deviceName}"`, res.connected ? "info" : "warn");
     
     if (res.connected) {
       deviceBadge.className = "status-pill connected";
@@ -58,18 +96,18 @@ async function checkDeviceState() {
 }
 
 btnRequestUsb.addEventListener("click", async () => {
-  log("Requesting USB Permission from Android OS...", "info");
+  log("Requesting Camera, Audio & USB OTG Permissions...", "info");
   try {
     const res = await UvcTester.requestPermission();
     if (res.granted) {
-      log(`USB Permission GRANTED for "${res.deviceName}"!`, "success");
+      log(`All Permissions GRANTED for "${res.deviceName || "USB Camera"}"!`, "success");
       btnStartStream.disabled = false;
       await checkDeviceState();
     } else {
-      log(`USB Permission DENIED or No Device: ${res.message || ""}`, "error");
+      log(`Permission Result: ${res.message || "Denied or not plugged in"}`, "error");
     }
   } catch (err) {
-    log(`Request permission exception: ${err.message || err}`, "error");
+    log(`Permission exception: ${err.message || err}`, "error");
   }
 });
 
@@ -80,7 +118,7 @@ btnStartStream.addEventListener("click", async () => {
   const format = formatSelect.value;
   const mirror = mirrorCheckbox.checked;
 
-  log(`Starting preview: ${targetWidth}x${targetHeight} (${format}), mirror=${mirror}...`, "info");
+  log(`Initiating stream: ${targetWidth}x${targetHeight} (${format}), mirror=${mirror}...`, "info");
   
   try {
     const res = await UvcTester.startPreview({
@@ -91,7 +129,7 @@ btnStartStream.addEventListener("click", async () => {
     });
 
     if (res.success) {
-      log(`Preview STREAM STARTED SUCCESSFULLY! Handle=${res.handleId}`, "success");
+      log(`STREAM STARTED! Native Handler ID=${res.handleId}`, "success");
       viewportPlaceholder.style.display = "none";
       liveIndicator.style.display = "flex";
       fpsIndicator.style.display = "block";
@@ -100,7 +138,7 @@ btnStartStream.addEventListener("click", async () => {
       btnTakePhoto.disabled = false;
       btnStopStream.disabled = false;
 
-      // Start stats polling
+      // Real-time stats polling
       if (statsInterval) clearInterval(statsInterval);
       statsInterval = setInterval(async () => {
         try {
@@ -111,7 +149,7 @@ btnStartStream.addEventListener("click", async () => {
         } catch (_) {}
       }, 1000);
     } else {
-      log(`Failed to start preview: ${res.error || "Unknown"}`, "error");
+      log(`Failed to start preview: ${res.error || "Probe/Commit rejected"}`, "error");
     }
   } catch (err) {
     log(`Start stream exception: ${err.message || err}`, "error");
@@ -119,20 +157,20 @@ btnStartStream.addEventListener("click", async () => {
 });
 
 btnTakePhoto.addEventListener("click", async () => {
-  log("Triggering high-resolution hardware snapshot...", "info");
+  log("Triggering hardware snapshot URB message...", "info");
   try {
     const mirror = mirrorCheckbox.checked;
     const res = await UvcTester.takePhoto({ mirror });
     
     if (res.success && res.dataUrl) {
-      log(`SNAPSHOT CAPTURED! Resolution: ${res.width}x${res.height}, Size: ${(res.dataUrl.length / 1024).toFixed(1)} KB`, "success");
+      log(`SNAPSHOT CAPTURED: ${res.width}x${res.height}, Size: ${(res.dataUrl.length / 1024).toFixed(1)} KB`, "success");
       snapshotImg.src = res.dataUrl;
       snapshotImg.style.display = "block";
-      const emptyText = snapshotBox.querySelector(".empty-text");
+      const emptyText = snapshotBox.querySelector(".empty-state");
       if (emptyText) emptyText.style.display = "none";
       photoDimensions.textContent = `${res.width}x${res.height}`;
     } else {
-      log(`Take photo failed: ${res.error || "Empty frame buffer"}`, "error");
+      log(`Take photo failed: ${res.error || "Empty buffer"}`, "error");
     }
   } catch (err) {
     log(`Take photo exception: ${err.message || err}`, "error");
@@ -140,12 +178,12 @@ btnTakePhoto.addEventListener("click", async () => {
 });
 
 btnStopStream.addEventListener("click", async () => {
-  log("Stopping camera stream...", "info");
+  log("Stopping stream & releasing hardware...", "info");
   try {
     if (statsInterval) clearInterval(statsInterval);
     await UvcTester.stopPreview();
     
-    log("Stream stopped and hardware released.", "info");
+    log("Stream stopped successfully.", "info");
     viewportPlaceholder.style.display = "flex";
     liveIndicator.style.display = "none";
     fpsIndicator.style.display = "none";
@@ -158,7 +196,7 @@ btnStopStream.addEventListener("click", async () => {
   }
 });
 
-// Auto check device on load
+// Auto check device on page load
 window.addEventListener("DOMContentLoaded", () => {
   log("UVC Kernel Tester loaded. Checking USB devices...", "info");
   checkDeviceState();

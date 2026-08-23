@@ -1,5 +1,6 @@
 package com.uvctester.app.uvc;
 
+import android.Manifest;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.hardware.usb.UsbDevice;
@@ -13,12 +14,23 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import androidx.annotation.NonNull;
 import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 
-@CapacitorPlugin(name = "UvcTester")
+@CapacitorPlugin(
+    name = "UvcTester",
+    permissions = {
+        @Permission(
+            strings = { Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO },
+            alias = "camera"
+        )
+    }
+)
 public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
     private static final String TAG = "UvcTesterPlugin";
 
@@ -44,9 +56,12 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
         try {
             UsbDevice dev = controller.findUvcDevice();
             JSObject ret = new JSObject();
+            boolean hasRuntimePerms = getPermissionState("camera") == PermissionState.GRANTED;
+            ret.put("runtimePermissions", hasRuntimePerms);
+
             if (dev != null) {
                 ret.put("connected", true);
-                ret.put("permission", controller.hasPermission(dev));
+                ret.put("permission", controller.hasPermission(dev) && hasRuntimePerms);
                 ret.put("deviceName", dev.getProductName() != null ? dev.getProductName() : dev.getDeviceName());
                 ret.put("vendorId", dev.getVendorId());
                 ret.put("productId", dev.getProductId());
@@ -65,12 +80,32 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
 
     @PluginMethod
     public void requestPermission(PluginCall call) {
+        if (getPermissionState("camera") != PermissionState.GRANTED) {
+            requestPermissionForAlias("camera", call, "cameraPermsCallback");
+        } else {
+            requestUsbPermission(call);
+        }
+    }
+
+    @PermissionCallback
+    private void cameraPermsCallback(PluginCall call) {
+        if (getPermissionState("camera") == PermissionState.GRANTED) {
+            requestUsbPermission(call);
+        } else {
+            JSObject ret = new JSObject();
+            ret.put("granted", false);
+            ret.put("message", "Android Camera & Microphone runtime permission denied");
+            call.resolve(ret);
+        }
+    }
+
+    private void requestUsbPermission(PluginCall call) {
         try {
             UsbDevice dev = controller.findUvcDevice();
             if (dev == null) {
                 JSObject ret = new JSObject();
                 ret.put("granted", false);
-                ret.put("message", "No UVC USB camera detected");
+                ret.put("message", "Android Camera permission granted, but no USB UVC device detected in OTG");
                 call.resolve(ret);
                 return;
             }
