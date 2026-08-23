@@ -339,7 +339,7 @@ public class UvcController {
                 if (logCb != null) logCb.onLog(lastError, "error");
                 return false;
             }
-            int fd = deviceConnection.getFileDescriptor();
+            final int fd = deviceConnection.getFileDescriptor();
             if (logCb != null) logCb.onLog("USB Connection open OK, fd=" + fd, "success");
 
             this.currentParsedUvc = parseDescriptors(dev, deviceConnection, logCb);
@@ -427,6 +427,9 @@ public class UvcController {
 
             if (logCb != null) logCb.onLog("6. URB Router thread started (ID=" + routerId + ")", "info");
 
+            // Allow background epoll thread to bind routerId in native table
+            try { Thread.sleep(60); } catch (Exception ignored) {}
+
             if ("MJPG".equalsIgnoreCase(format.fourCc)) {
                 this.currentHandler = new MjpegStreamUrbHandler(
                     format, frame,
@@ -455,7 +458,17 @@ public class UvcController {
                 this.currentHandler.setSurface(this.attachedSurface);
             }
 
-            boolean started = this.currentHandler.start();
+            boolean started = false;
+            for (int attempt = 1; attempt <= 3; attempt++) {
+                try {
+                    started = this.currentHandler.start();
+                    if (started) break;
+                } catch (Throwable t) {
+                    Log.w(TAG, "Attempt " + attempt + " handler start failed: " + t.getMessage());
+                }
+                try { Thread.sleep(60); } catch (Exception ignored) {}
+            }
+
             if (logCb != null) {
                 logCb.onLog("7. Native Handler Start: handle=" + currentHandler.r + " (started=" + started + ")", started ? "success" : "error");
             }

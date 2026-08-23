@@ -47,10 +47,10 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
     private boolean mirror = false;
     private PluginCall activeStartCall;
 
-    private int boundsX = 0;
-    private int boundsY = 0;
-    private int boundsW = 0;
-    private int boundsH = 0;
+    private double cssBoundsX = 0;
+    private double cssBoundsY = 0;
+    private double cssBoundsW = 0;
+    private double cssBoundsH = 0;
 
     private UvcController getController() {
         if (controller == null) {
@@ -159,12 +159,11 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
         this.mirror = call.getBoolean("mirror", false);
 
         JSObject b = call.getObject("bounds");
-        DisplayMetrics dm = getContext().getResources().getDisplayMetrics();
         if (b != null) {
-            this.boundsX = (int) (b.optDouble("x", 0.0) * dm.density);
-            this.boundsY = (int) (b.optDouble("y", 0.0) * dm.density);
-            this.boundsW = (int) (b.optDouble("width", 0.0) * dm.density);
-            this.boundsH = (int) (b.optDouble("height", 0.0) * dm.density);
+            this.cssBoundsX = b.optDouble("x", 0.0);
+            this.cssBoundsY = b.optDouble("y", 0.0);
+            this.cssBoundsW = b.optDouble("width", 0.0);
+            this.cssBoundsH = b.optDouble("height", 0.0);
         }
 
         getActivity().runOnUiThread(() -> {
@@ -193,6 +192,45 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
         });
     }
 
+    @PluginMethod
+    public void updateBounds(PluginCall call) {
+        JSObject b = call.getObject("bounds");
+        if (b != null) {
+            this.cssBoundsX = b.optDouble("x", 0.0);
+            this.cssBoundsY = b.optDouble("y", 0.0);
+            this.cssBoundsW = b.optDouble("width", 0.0);
+            this.cssBoundsH = b.optDouble("height", 0.0);
+            getActivity().runOnUiThread(this::applySurfaceBounds);
+        }
+        call.resolve();
+    }
+
+    private void applySurfaceBounds() {
+        if (previewSurfaceView == null || getActivity() == null) return;
+        DisplayMetrics dm = getContext().getResources().getDisplayMetrics();
+        int pxW = (int) Math.round(cssBoundsW * dm.density);
+        int pxH = (int) Math.round(cssBoundsH * dm.density);
+        int pxX = (int) Math.round(cssBoundsX * dm.density);
+        int pxY = (int) Math.round(cssBoundsY * dm.density);
+
+        ViewGroup rootView = (ViewGroup) getActivity().getWindow().getDecorView().findViewById(android.R.id.content);
+        if (rootView != null && getBridge().getWebView() != null) {
+            int[] webViewLoc = new int[2];
+            getBridge().getWebView().getLocationOnScreen(webViewLoc);
+            int[] rootLoc = new int[2];
+            rootView.getLocationOnScreen(rootLoc);
+            pxX += (webViewLoc[0] - rootLoc[0]);
+            pxY += (webViewLoc[1] - rootLoc[1]);
+        }
+
+        if (pxW > 0 && pxH > 0) {
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(pxW, pxH);
+            lp.leftMargin = pxX;
+            lp.topMargin = pxY;
+            previewSurfaceView.setLayoutParams(lp);
+        }
+    }
+
     private void setupSurfaceAndStart(UsbDevice dev) {
         if (surfaceContainer == null) {
             surfaceContainer = new FrameLayout(getActivity());
@@ -207,19 +245,15 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
             surfaceHolder.setFormat(PixelFormat.RGBX_8888);
             surfaceHolder.setFixedSize(targetW, targetH);
 
-            FrameLayout.LayoutParams lp;
-            if (boundsW > 0 && boundsH > 0) {
-                lp = new FrameLayout.LayoutParams(boundsW, boundsH);
-                lp.leftMargin = boundsX;
-                lp.topMargin = boundsY;
-            } else {
-                lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER);
-            }
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER
+            );
             surfaceContainer.addView(previewSurfaceView, lp);
 
             ViewGroup rootView = (ViewGroup) getActivity().getWindow().getDecorView().findViewById(android.R.id.content);
             if (rootView != null) {
-                // Add behind WebView (index 0) so HTML UI is drawn on top
                 rootView.addView(surfaceContainer, 0, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
@@ -230,15 +264,9 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
             }
         } else {
             surfaceContainer.setVisibility(View.VISIBLE);
-            if (previewSurfaceView != null && boundsW > 0 && boundsH > 0) {
-                FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) previewSurfaceView.getLayoutParams();
-                lp.width = boundsW;
-                lp.height = boundsH;
-                lp.leftMargin = boundsX;
-                lp.topMargin = boundsY;
-                previewSurfaceView.setLayoutParams(lp);
-            }
         }
+
+        applySurfaceBounds();
 
         if (surfaceHolder != null && surfaceHolder.getSurface().isValid()) {
             boolean ok = getController().startStream(dev, surfaceHolder.getSurface(), targetW, targetH, preferredFormat, mirror, (msg, type) -> {

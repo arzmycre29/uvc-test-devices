@@ -27,6 +27,7 @@ const snapshotBox = document.getElementById("snapshot-box");
 const photoDimensions = document.getElementById("photo-dimensions");
 
 let statsInterval = null;
+let isStreaming = false;
 
 function log(msg, type = "info") {
   const time = new Date().toTimeString().split(" ")[0];
@@ -36,6 +37,27 @@ function log(msg, type = "info") {
   consoleLogs.appendChild(div);
   consoleLogs.scrollTop = consoleLogs.scrollHeight;
 }
+
+function getViewportBounds() {
+  const rect = cameraViewport.getBoundingClientRect();
+  return {
+    x: rect.left,
+    y: rect.top,
+    width: rect.width,
+    height: rect.height
+  };
+}
+
+async function syncBounds() {
+  if (isStreaming) {
+    try {
+      await UvcTester.updateBounds({ bounds: getViewportBounds() });
+    } catch (_) {}
+  }
+}
+
+window.addEventListener("resize", syncBounds);
+window.addEventListener("orientationchange", () => setTimeout(syncBounds, 250));
 
 btnClearLog.addEventListener("click", () => {
   consoleLogs.innerHTML = "";
@@ -133,16 +155,9 @@ btnStartStream.addEventListener("click", async () => {
   const targetHeight = parseInt(resVal[1], 10);
   const format = formatSelect.value;
   const mirror = mirrorCheckbox.checked;
+  const bounds = getViewportBounds();
 
-  const rect = cameraViewport.getBoundingClientRect();
-  const bounds = {
-    x: Math.round(rect.left),
-    y: Math.round(rect.top),
-    width: Math.round(rect.width),
-    height: Math.round(rect.height)
-  };
-
-  log(`Initiating stream: ${targetWidth}x${targetHeight} (${format}), mirror=${mirror}, bounds=[${bounds.width}x${bounds.height} at (${bounds.x},${bounds.y})]...`, "info");
+  log(`Initiating stream: ${targetWidth}x${targetHeight} (${format}), mirror=${mirror}, bounds=[${Math.round(bounds.width)}x${Math.round(bounds.height)} at (${Math.round(bounds.x)},${Math.round(bounds.y)})]...`, "info");
   
   try {
     const res = await UvcTester.startPreview({
@@ -154,6 +169,7 @@ btnStartStream.addEventListener("click", async () => {
     });
 
     if (res.success) {
+      isStreaming = true;
       log(`STREAM STARTED! Native Handler ID=${res.handleId}`, "success");
       viewportPlaceholder.style.visibility = "hidden";
       liveIndicator.style.display = "flex";
@@ -173,9 +189,11 @@ btnStartStream.addEventListener("click", async () => {
         } catch (_) {}
       }, 1000);
     } else {
+      isStreaming = false;
       log(`Failed to start preview: ${res.error || "Handshake rejected"}`, "error");
     }
   } catch (err) {
+    isStreaming = false;
     log(`Start stream exception: ${err.message || err}`, "error");
   }
 });
@@ -204,6 +222,7 @@ btnTakePhoto.addEventListener("click", async () => {
 btnStopStream.addEventListener("click", async () => {
   log("Stopping stream & releasing hardware...", "info");
   try {
+    isStreaming = false;
     if (statsInterval) clearInterval(statsInterval);
     await UvcTester.stopPreview();
     
