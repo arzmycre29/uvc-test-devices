@@ -27,6 +27,10 @@ public abstract class VideoUrbHandler {
 
     public FrameListener frameListener;
 
+    public VideoUrbHandler(FormatDesc formatDesc, FrameDesc frameDesc, int endpointAddress, int maxPacketSize, int packetsPerUrb, int interval, int maxPayloadTransferSize) {
+        this(formatDesc, frameDesc, endpointAddress, maxPacketSize, packetsPerUrb, interval, maxPayloadTransferSize, frameDesc != null ? frameDesc.getWidth() * frameDesc.getHeight() * 2 : 4147200);
+    }
+
     public VideoUrbHandler(FormatDesc formatDesc, FrameDesc frameDesc, int endpointAddress, int maxPacketSize, int packetsPerUrb, int interval, int maxPayloadTransferSize, int maxVideoFrameSize) {
         this.formatDesc = formatDesc;
         this.frameDesc = frameDesc;
