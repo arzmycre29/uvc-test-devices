@@ -1,7 +1,8 @@
 package com.homesoft.usb.fs.uvc;
 
-import java.nio.ByteBuffer;
+import android.media.Image;
 
 public interface IYuv420Recorder {
-    void onYuv420Frame(ByteBuffer byteBuffer, long pts);
+    Image nextImage();
+    void queueImage(long j, int i);
 }
