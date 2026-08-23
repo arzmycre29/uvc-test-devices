@@ -49,4 +49,9 @@ public final class MediaCodecUrbHandler extends VideoUrbHandler implements IFlag
     @Override
     public void onFrame(ByteBuffer byteBuffer, long pts, byte flags) {
     }
+
+    public boolean onNalUnit(byte b, ByteBuffer byteBuffer) {
+        Log.d(TAG, "Got NAL unit: " + (b & 255));
+        return true;
+    }
 }
