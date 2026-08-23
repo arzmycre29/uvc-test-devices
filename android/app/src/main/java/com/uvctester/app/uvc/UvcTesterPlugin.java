@@ -161,10 +161,10 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
         JSObject b = call.getObject("bounds");
         DisplayMetrics dm = getContext().getResources().getDisplayMetrics();
         if (b != null) {
-            this.boundsX = (int) (b.getDouble("x", 0.0) * dm.density);
-            this.boundsY = (int) (b.getDouble("y", 0.0) * dm.density);
-            this.boundsW = (int) (b.getDouble("width", 0.0) * dm.density);
-            this.boundsH = (int) (b.getDouble("height", 0.0) * dm.density);
+            this.boundsX = (int) (b.optDouble("x", 0.0) * dm.density);
+            this.boundsY = (int) (b.optDouble("y", 0.0) * dm.density);
+            this.boundsW = (int) (b.optDouble("width", 0.0) * dm.density);
+            this.boundsH = (int) (b.optDouble("height", 0.0) * dm.density);
         }
 
         getActivity().runOnUiThread(() -> {
