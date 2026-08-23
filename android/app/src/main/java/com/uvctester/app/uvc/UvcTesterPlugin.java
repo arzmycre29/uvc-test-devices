@@ -47,6 +47,11 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
     private boolean mirror = false;
     private PluginCall activeStartCall;
 
+    private int boundsX = 0;
+    private int boundsY = 0;
+    private int boundsW = 0;
+    private int boundsH = 0;
+
     private UvcController getController() {
         if (controller == null) {
             controller = UvcController.getInstance(getContext());
@@ -153,6 +158,15 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
         this.preferredFormat = call.getString("format", "MJPG");
         this.mirror = call.getBoolean("mirror", false);
 
+        JSObject b = call.getObject("bounds");
+        DisplayMetrics dm = getContext().getResources().getDisplayMetrics();
+        if (b != null) {
+            this.boundsX = (int) (b.getDouble("x", 0.0) * dm.density);
+            this.boundsY = (int) (b.getDouble("y", 0.0) * dm.density);
+            this.boundsW = (int) (b.getDouble("width", 0.0) * dm.density);
+            this.boundsH = (int) (b.getDouble("height", 0.0) * dm.density);
+        }
+
         getActivity().runOnUiThread(() -> {
             try {
                 UsbDevice dev = getController().findUvcDevice();
@@ -182,32 +196,43 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
     private void setupSurfaceAndStart(UsbDevice dev) {
         if (surfaceContainer == null) {
             surfaceContainer = new FrameLayout(getActivity());
-            surfaceContainer.setBackgroundColor(Color.BLACK);
+            surfaceContainer.setBackgroundColor(Color.TRANSPARENT);
 
             previewSurfaceView = new SurfaceView(getActivity());
+            previewSurfaceView.setZOrderMediaOverlay(true);
+            
             surfaceHolder = previewSurfaceView.getHolder();
             surfaceHolder.addCallback(this);
             surfaceHolder.setFormat(PixelFormat.RGBX_8888);
+            surfaceHolder.setFixedSize(targetW, targetH);
 
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                Gravity.CENTER
-            );
+            FrameLayout.LayoutParams lp;
+            if (boundsW > 0 && boundsH > 0) {
+                lp = new FrameLayout.LayoutParams(boundsW, boundsH);
+                lp.leftMargin = boundsX;
+                lp.topMargin = boundsY;
+            } else {
+                lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER);
+            }
             surfaceContainer.addView(previewSurfaceView, lp);
 
             ViewGroup rootView = (ViewGroup) getActivity().getWindow().getDecorView().findViewById(android.R.id.content);
             if (rootView != null) {
-                rootView.addView(surfaceContainer, 0, new FrameLayout.LayoutParams(
+                rootView.addView(surfaceContainer, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
                 ));
-                try {
-                    getBridge().getWebView().setBackgroundColor(Color.TRANSPARENT);
-                } catch (Exception ignored) {}
             }
         } else {
             surfaceContainer.setVisibility(View.VISIBLE);
+            if (previewSurfaceView != null && boundsW > 0 && boundsH > 0) {
+                FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) previewSurfaceView.getLayoutParams();
+                lp.width = boundsW;
+                lp.height = boundsH;
+                lp.leftMargin = boundsX;
+                lp.topMargin = boundsY;
+                previewSurfaceView.setLayoutParams(lp);
+            }
         }
 
         if (surfaceHolder != null && surfaceHolder.getSurface().isValid()) {
@@ -278,6 +303,7 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
     @Override
     public void surfaceCreated(@NonNull SurfaceHolder holder) {
         this.surfaceHolder = holder;
+        holder.setFixedSize(targetW, targetH);
         UsbDevice dev = getController().findUvcDevice();
         if (dev != null && getController().hasPermission(dev)) {
             boolean ok = getController().startStream(dev, holder.getSurface(), targetW, targetH, preferredFormat, mirror, (msg, type) -> {

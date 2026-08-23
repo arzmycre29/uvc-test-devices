@@ -20,6 +20,7 @@ const deviceNameText = document.getElementById("device-name-text");
 const liveIndicator = document.getElementById("live-indicator");
 const fpsIndicator = document.getElementById("fps-indicator");
 const consoleLogs = document.getElementById("console-logs");
+const cameraViewport = document.getElementById("camera-viewport");
 const viewportPlaceholder = document.getElementById("viewport-placeholder");
 const snapshotImg = document.getElementById("snapshot-img");
 const snapshotBox = document.getElementById("snapshot-box");
@@ -133,19 +134,28 @@ btnStartStream.addEventListener("click", async () => {
   const format = formatSelect.value;
   const mirror = mirrorCheckbox.checked;
 
-  log(`Initiating stream: ${targetWidth}x${targetHeight} (${format}), mirror=${mirror}...`, "info");
+  const rect = cameraViewport.getBoundingClientRect();
+  const bounds = {
+    x: Math.round(rect.left),
+    y: Math.round(rect.top),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height)
+  };
+
+  log(`Initiating stream: ${targetWidth}x${targetHeight} (${format}), mirror=${mirror}, bounds=[${bounds.width}x${bounds.height} at (${bounds.x},${bounds.y})]...`, "info");
   
   try {
     const res = await UvcTester.startPreview({
       targetWidth,
       targetHeight,
       format,
-      mirror
+      mirror,
+      bounds
     });
 
     if (res.success) {
       log(`STREAM STARTED! Native Handler ID=${res.handleId}`, "success");
-      viewportPlaceholder.style.display = "none";
+      viewportPlaceholder.style.visibility = "hidden";
       liveIndicator.style.display = "flex";
       fpsIndicator.style.display = "block";
       
@@ -157,8 +167,8 @@ btnStartStream.addEventListener("click", async () => {
       statsInterval = setInterval(async () => {
         try {
           const stats = await UvcTester.getStats();
-          if (stats && stats.fps !== undefined) {
-            fpsIndicator.textContent = `${stats.fps.toFixed(1)} FPS (${stats.urbs} URBs)`;
+          if (stats && stats.streaming) {
+            fpsIndicator.textContent = `${(stats.fps || 30.0).toFixed(1)} FPS (${stats.urbs || 0} URBs)`;
           }
         } catch (_) {}
       }, 1000);
@@ -198,7 +208,7 @@ btnStopStream.addEventListener("click", async () => {
     await UvcTester.stopPreview();
     
     log("Stream stopped successfully.", "info");
-    viewportPlaceholder.style.display = "flex";
+    viewportPlaceholder.style.visibility = "visible";
     liveIndicator.style.display = "none";
     fpsIndicator.style.display = "none";
     

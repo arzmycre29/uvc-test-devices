@@ -34,7 +34,7 @@
 html, body {
   width: 100%;
   min-height: 100%;
-  background-color: var(--bg-main);
+  background-color: transparent !important;
   color: var(--text-bright);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -54,6 +54,7 @@ body {
   gap: 10px;
   max-width: 1200px;
   margin: 0 auto;
+  background-color: transparent !important;
 }
 
 /* Header Navbar */
@@ -149,7 +150,7 @@ body {
 
 /* Viewport Card */
 .viewport-card {
-  background: #000000;
+  background: transparent !important;
   border: 1px solid var(--border-color);
   border-radius: 14px;
   overflow: hidden;
@@ -161,7 +162,7 @@ body {
   width: 100%;
   aspect-ratio: 16 / 9;
   max-height: 48vh;
-  background: transparent;
+  background: transparent !important;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -176,6 +177,10 @@ body {
   padding: 16px;
   gap: 4px;
   color: var(--text-muted);
+  background: rgba(20, 20, 23, 0.85);
+  border-radius: 10px;
+  width: 100%;
+  height: 100%;
 }
 
 .placeholder-icon {
@@ -297,6 +302,9 @@ body {
 .btn-danger { background: var(--danger-red); color: #fff; }
 .btn-danger:not(:disabled):hover { background: var(--danger-red-hover); }
 
+.btn-secondary { background: #3f3f46; color: #e4e4e7; }
+.btn-secondary:not(:disabled):hover { background: #52525b; }
+
 .btn-icon { font-size: 14px; }
 .btn-label { font-size: 11px; white-space: nowrap; }
 
@@ -355,7 +363,7 @@ body {
   height: 16px;
 }
 
-/* Right Section (Side Panel on Desktop, Stacked on Mobile) */
+/* Right Section */
 .right-section {
   display: flex;
   flex-direction: column;
@@ -398,14 +406,48 @@ body {
   color: var(--text-bright);
 }
 
-.btn-clear {
-  background: none;
-  border: none;
-  color: var(--primary-blue);
-  font-size: 11px;
-  font-weight: 600;
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-action {
+  background: #27272a;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
   cursor: pointer;
-  padding: 2px 6px;
+  transition: all 0.15s ease;
+}
+
+.btn-action:hover {
+  background: #3f3f46;
+  color: var(--text-bright);
+}
+
+.btn-copy {
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.btn-copy:hover {
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+}
+
+.btn-copy.copied {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+.btn-clear {
+  color: var(--text-muted);
 }
 
 /* Snapshot Body */
@@ -516,51 +558,4 @@ body {
     height: 100%;
     max-height: none;
   }
-}
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.btn-action {
-  background: #27272a;
-  border: 1px solid var(--border-color);
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-action:hover {
-  background: #3f3f46;
-  color: var(--text-bright);
-}
-
-.btn-copy {
-  color: #60a5fa;
-  border-color: rgba(59, 130, 246, 0.4);
-  background: rgba(59, 130, 246, 0.1);
-}
-
-.btn-copy:hover {
-  background: rgba(59, 130, 246, 0.2);
-  color: #93c5fd;
-}
-
-.btn-copy.copied {
-  background: rgba(16, 185, 129, 0.2);
-  color: #34d399;
-  border-color: rgba(16, 185, 129, 0.5);
-}
-.btn-secondary {
-  background: #3f3f46;
-  color: #e4e4e7;
-}
-
-.btn-secondary:not(:disabled):hover {
-  background: #52525b;
 }
