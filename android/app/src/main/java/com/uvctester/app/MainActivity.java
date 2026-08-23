@@ -6,8 +6,8 @@ import com.uvctester.app.uvc.UvcTesterPlugin;
 
 public class MainActivity extends BridgeActivity {
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+    public void onCreate(Bundle savedInstanceState) {
         registerPlugin(UvcTesterPlugin.class);
+        super.onCreate(savedInstanceState);
     }
 }
