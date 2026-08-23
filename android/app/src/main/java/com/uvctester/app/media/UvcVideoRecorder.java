@@ -4,7 +4,6 @@ import android.content.Context;
 import android.media.Image;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
-import android.media.MediaCodecList;
 import android.media.MediaFormat;
 import android.media.MediaMuxer;
 import android.os.Build;
@@ -14,7 +13,6 @@ import com.homesoft.usb.fs.uvc.IYuv420Recorder;
 import com.homesoft.usb.fs.uvc.VideoUrbHandler;
 import java.io.File;
 import java.nio.ByteBuffer;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class UvcVideoRecorder implements IYuv420Recorder {
@@ -38,8 +36,6 @@ public class UvcVideoRecorder implements IYuv420Recorder {
     private long lastFrameTimeUs = -1;
     private int frameCount = 0;
     private int currentInputIndex = -1;
-
-    private final ArrayBlockingQueue<Integer> availableInputIndices = new ArrayBlockingQueue<>(16);
 
     public interface RecordCallback {
         void onStarted(String filePath, String fileName);
@@ -153,6 +149,11 @@ public class UvcVideoRecorder implements IYuv420Recorder {
                 lastFrameTimeUs = ptsUs;
 
                 Image img = mediaCodec.getInputImage(inputIndex);
+                if (img != null) {
+                    // Correct YUV Chroma (Swap U and V to eliminate bluish/cyan tint)
+                    swapUVPlanes(img);
+                }
+
                 int size = (width * height * 3) / 2;
                 mediaCodec.queueInputBuffer(inputIndex, 0, size, ptsUs, 0);
                 frameCount++;
@@ -161,6 +162,46 @@ public class UvcVideoRecorder implements IYuv420Recorder {
             }
         } catch (Exception e) {
             Log.w(TAG, "queueImage error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Swaps U and V (Cb and Cr) chroma planes so colors match natural reality
+     * instead of inverted blue/cyan tint.
+     */
+    private void swapUVPlanes(Image img) {
+        try {
+            Image.Plane[] planes = img.getPlanes();
+            if (planes == null || planes.length < 3) return;
+
+            ByteBuffer uBuf = planes[1].getBuffer();
+            ByteBuffer vBuf = planes[2].getBuffer();
+            if (uBuf == null || vBuf == null) return;
+
+            int pixelStride = planes[1].getPixelStride();
+            int uRem = uBuf.remaining();
+            int vRem = vBuf.remaining();
+            int len = Math.min(uRem, vRem);
+
+            if (pixelStride == 1) {
+                // Planar format (I420 vs YV12)
+                for (int i = 0; i < len; i++) {
+                    byte u = uBuf.get(i);
+                    byte v = vBuf.get(i);
+                    uBuf.put(i, v);
+                    vBuf.put(i, u);
+                }
+            } else {
+                // Semi-planar interleaved format (NV12 vs NV21)
+                for (int i = 0; i < len; i += pixelStride) {
+                    byte u = uBuf.get(i);
+                    byte v = vBuf.get(i);
+                    uBuf.put(i, v);
+                    vBuf.put(i, u);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "swapUVPlanes error: " + e.getMessage());
         }
     }
 
