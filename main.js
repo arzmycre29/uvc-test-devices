@@ -163,7 +163,7 @@ btnStartStream.addEventListener("click", async () => {
         } catch (_) {}
       }, 1000);
     } else {
-      log(`Failed to start preview: ${res.error || "Probe/Commit rejected"}`, "error");
+      log(`Failed to start preview: ${res.error || "Handshake rejected"}`, "error");
     }
   } catch (err) {
     log(`Start stream exception: ${err.message || err}`, "error");
@@ -210,9 +210,19 @@ btnStopStream.addEventListener("click", async () => {
   }
 });
 
-// Auto check device on page load
-window.addEventListener("DOMContentLoaded", () => {
+// Setup listeners & check device on page load
+window.addEventListener("DOMContentLoaded", async () => {
   log("UVC Kernel Tester UI ready. Tap 'Test JNI Engine' or 'Request USB'.", "info");
+  try {
+    await UvcTester.addListener("uvcLog", (data) => {
+      if (data && data.message) {
+        log(data.message, data.type || "info");
+      }
+    });
+  } catch (e) {
+    console.error("addListener error", e);
+  }
+  
   try {
     checkDeviceState();
   } catch (e) {

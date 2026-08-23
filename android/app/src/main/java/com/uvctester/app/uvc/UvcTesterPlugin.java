@@ -54,6 +54,13 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
         return controller;
     }
 
+    private void emitLog(String msg, String type) {
+        JSObject data = new JSObject();
+        data.put("message", msg);
+        data.put("type", type);
+        notifyListeners("uvcLog", data);
+    }
+
     @PluginMethod
     public void testNative(PluginCall call) {
         try {
@@ -204,11 +211,15 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
         }
 
         if (surfaceHolder != null && surfaceHolder.getSurface().isValid()) {
-            boolean ok = getController().startStream(dev, surfaceHolder.getSurface(), targetW, targetH, preferredFormat, mirror);
+            boolean ok = getController().startStream(dev, surfaceHolder.getSurface(), targetW, targetH, preferredFormat, mirror, (msg, type) -> {
+                getActivity().runOnUiThread(() -> emitLog(msg, type));
+            });
+
             if (activeStartCall != null) {
                 JSObject ret = new JSObject();
                 ret.put("success", ok);
                 ret.put("handleId", getController().getHandleId());
+                ret.put("error", getController().getLastError());
                 activeStartCall.resolve(ret);
                 activeStartCall = null;
             }
@@ -269,11 +280,15 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
         this.surfaceHolder = holder;
         UsbDevice dev = getController().findUvcDevice();
         if (dev != null && getController().hasPermission(dev)) {
-            boolean ok = getController().startStream(dev, holder.getSurface(), targetW, targetH, preferredFormat, mirror);
+            boolean ok = getController().startStream(dev, holder.getSurface(), targetW, targetH, preferredFormat, mirror, (msg, type) -> {
+                getActivity().runOnUiThread(() -> emitLog(msg, type));
+            });
+
             if (activeStartCall != null) {
                 JSObject ret = new JSObject();
                 ret.put("success", ok);
                 ret.put("handleId", getController().getHandleId());
+                ret.put("error", getController().getLastError());
                 activeStartCall.resolve(ret);
                 activeStartCall = null;
             }

@@ -9,6 +9,7 @@ import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
+import android.hardware.usb.UsbConstants;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbEndpoint;
@@ -54,14 +55,20 @@ public class UvcController {
     private int lastUrbs = 0;
     private long lastStatsTime = 0;
     private float currentFps = 0.0f;
+    private String lastError = "";
+
+    public interface LogCallback {
+        void onLog(String message, String type);
+    }
 
     public static class ParsedUvc {
         public int vcInterface = -1;
         public int vsInterface = -1;
         public int vsAltSetting = 0;
         public int endpointAddress = 0;
+        public int endpointAttributes = 2; // 2 = Bulk, 1 = Isochronous
         public int maxPacketSize = 1024;
-        public int packetsPerUrb = 4;
+        public int packetsPerUrb = 0;
         public int maxPayloadTransferSize = 4096;
         public short bcdUVC = 0x0100;
         public final List<FormatDesc> formats = new ArrayList<>();
@@ -169,10 +176,13 @@ public class UvcController {
         usbManager.requestPermission(dev, pi);
     }
 
-    public ParsedUvc parseDescriptors(UsbDevice dev, UsbDeviceConnection conn) {
+    public ParsedUvc parseDescriptors(UsbDevice dev, UsbDeviceConnection conn, LogCallback logCb) {
         ParsedUvc info = new ParsedUvc();
         byte[] raw = conn.getRawDescriptors();
-        if (raw == null || raw.length == 0) return info;
+        if (raw == null || raw.length == 0) {
+            if (logCb != null) logCb.onLog("Raw descriptors is empty", "warn");
+            return fallbackParseFromSdk(dev, info, logCb);
+        }
 
         ByteBuffer buf = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN);
         FormatDesc curFmt = null;
@@ -210,13 +220,19 @@ public class UvcController {
                 int maxPkt = db.getShort(4) & 65535;
 
                 if (curClass == 14 && curSubclass == 2 && (epAddr & 128) == 128) {
-                    int mult = ((maxPkt >> 11) & 3) + 1;
-                    int pktSize = (maxPkt & 2047) * mult;
-                    if (pktSize > 0) {
-                        info.endpointAddress = epAddr;
+                    info.endpointAddress = epAddr;
+                    info.endpointAttributes = attr & 3;
+                    info.vsAltSetting = curAlt;
+
+                    if ((attr & 3) == 2) { // Bulk Endpoint
+                        info.maxPacketSize = maxPkt & 2047;
+                        info.packetsPerUrb = 0;
+                        info.maxPayloadTransferSize = Math.max(info.maxPacketSize * 32, 16384);
+                    } else { // Isochronous Endpoint
+                        int mult = ((maxPkt >> 11) & 3) + 1;
+                        int pktSize = (maxPkt & 2047) * mult;
                         info.maxPacketSize = pktSize;
-                        info.vsAltSetting = curAlt;
-                        info.packetsPerUrb = (attr & 3) == 2 ? 0 : Math.min(Math.max((pktSize + 1023) / 1024, 1), 8);
+                        info.packetsPerUrb = Math.min(Math.max((pktSize + 1023) / 1024, 1), 8);
                         info.maxPayloadTransferSize = Math.max(pktSize * Math.max(info.packetsPerUrb, 1), 4096);
                     }
                 }
@@ -225,7 +241,7 @@ public class UvcController {
                 if (curClass == 14 && curSubclass == 1 && subtype == 1) {
                     info.bcdUVC = db.getShort(3);
                 } else if (curClass == 14 && curSubclass == 2) {
-                    if (subtype == 4) {
+                    if (subtype == 4) { // VS_FORMAT_UNCOMPRESSED
                         byte fmtIdx = db.get(3);
                         byte numFrames = db.get(4);
                         byte[] guid = new byte[16];
@@ -235,14 +251,14 @@ public class UvcController {
                         if (!fourCc.equalsIgnoreCase("NV12") && !fourCc.equalsIgnoreCase("YUYV")) fourCc = "YUY2";
                         curFmt = new FormatDesc(fmtIdx, numFrames, fourCc.toUpperCase(), db.get(21));
                         info.formats.add(curFmt);
-                    } else if (subtype == 5) {
+                    } else if (subtype == 5) { // VS_FRAME_UNCOMPRESSED
                         if (curFmt != null && len >= 26) {
                             curFmt.addFrameDesc(new FrameDesc(db.get(3), db.getShort(5) & 65535, db.getShort(7) & 65535, db.getInt(21), new int[]{db.getInt(21)}));
                         }
-                    } else if (subtype == 6) {
+                    } else if (subtype == 6) { // VS_FORMAT_MJPEG
                         curFmt = new FormatDesc(db.get(3), db.get(4), "MJPG", db.get(6));
                         info.formats.add(curFmt);
-                    } else if (subtype == 7) {
+                    } else if (subtype == 7) { // VS_FRAME_MJPEG
                         if (curFmt != null && len >= 26) {
                             curFmt.addFrameDesc(new FrameDesc(db.get(3), db.getShort(5) & 65535, db.getShort(7) & 65535, db.getInt(21), new int[]{db.getInt(21)}));
                         }
@@ -251,29 +267,60 @@ public class UvcController {
             }
         }
 
-        if (info.endpointAddress == 0) {
-            for (int i = 0; i < dev.getInterfaceCount(); i++) {
-                UsbInterface intf = dev.getInterface(i);
-                if (intf.getInterfaceClass() == 14 && intf.getInterfaceSubclass() == 2) {
-                    info.vsInterface = intf.getId();
+        if (info.formats.isEmpty() || info.endpointAddress == 0) {
+            return fallbackParseFromSdk(dev, info, logCb);
+        }
+
+        return info;
+    }
+
+    private ParsedUvc fallbackParseFromSdk(UsbDevice dev, ParsedUvc info, LogCallback logCb) {
+        if (logCb != null) logCb.onLog("Using SDK Interface Enumerator for UVC endpoints...", "info");
+        for (int i = 0; i < dev.getInterfaceCount(); i++) {
+            UsbInterface intf = dev.getInterface(i);
+            if (intf.getInterfaceClass() == 14) {
+                if (intf.getInterfaceSubclass() == 1 && info.vcInterface == -1) {
+                    info.vcInterface = intf.getId();
+                } else if (intf.getInterfaceSubclass() == 2) {
+                    if (info.vsInterface == -1) info.vsInterface = intf.getId();
                     for (int ep = 0; ep < intf.getEndpointCount(); ep++) {
                         UsbEndpoint endpoint = intf.getEndpoint(ep);
-                        if (endpoint.getDirection() == 128) {
+                        if (endpoint.getDirection() == UsbConstants.USB_DIR_IN) {
                             info.endpointAddress = endpoint.getAddress();
-                            info.maxPacketSize = Math.max(endpoint.getMaxPacketSize(), 1024);
-                            info.packetsPerUrb = 4;
-                            info.maxPayloadTransferSize = info.maxPacketSize * 4;
+                            info.endpointAttributes = endpoint.getType();
+                            info.maxPacketSize = endpoint.getMaxPacketSize();
+                            info.packetsPerUrb = (endpoint.getType() == UsbConstants.USB_ENDPOINT_XFER_BULK) ? 0 : 4;
+                            info.maxPayloadTransferSize = info.maxPacketSize * 16;
                             break;
                         }
                     }
                 }
             }
         }
+
+        if (info.formats.isEmpty()) {
+            // Provide default format descriptors if descriptor parsing was truncated
+            FormatDesc mjpg = new FormatDesc((byte) 1, (byte) 3, "MJPG", (byte) 1);
+            mjpg.addFrameDesc(new FrameDesc((byte) 1, 1920, 1080, 333333, new int[]{333333}));
+            mjpg.addFrameDesc(new FrameDesc((byte) 2, 1280, 720, 333333, new int[]{333333}));
+            mjpg.addFrameDesc(new FrameDesc((byte) 3, 640, 480, 333333, new int[]{333333}));
+            info.formats.add(mjpg);
+
+            FormatDesc yuy2 = new FormatDesc((byte) 2, (byte) 3, "YUY2", (byte) 1);
+            yuy2.addFrameDesc(new FrameDesc((byte) 1, 1280, 720, 333333, new int[]{333333}));
+            yuy2.addFrameDesc(new FrameDesc((byte) 2, 640, 480, 333333, new int[]{333333}));
+            info.formats.add(yuy2);
+        }
+
         return info;
     }
 
-    public synchronized boolean startStream(UsbDevice dev, Surface surface, int targetW, int targetH, String preferredFormat, boolean mirror) {
-        if (dev == null) return false;
+    public synchronized boolean startStream(UsbDevice dev, Surface surface, int targetW, int targetH, String preferredFormat, boolean mirror, LogCallback logCb) {
+        if (dev == null) {
+            lastError = "No UsbDevice";
+            if (logCb != null) logCb.onLog(lastError, "error");
+            return false;
+        }
         stopStream();
 
         this.connectedDevice = dev;
@@ -281,20 +328,29 @@ public class UvcController {
 
         try {
             if (!UsbFs.loadNative()) {
-                Log.e(TAG, "Native library not loaded: " + UsbFs.nativeLoadError);
+                lastError = "Native library failed to load: " + UsbFs.nativeLoadError;
+                if (logCb != null) logCb.onLog(lastError, "error");
                 return false;
             }
 
             this.deviceConnection = usbManager.openDevice(dev);
             if (this.deviceConnection == null) {
-                Log.e(TAG, "Cannot open UsbDeviceConnection");
+                lastError = "usbManager.openDevice returned null (check OTG cable & permission)";
+                if (logCb != null) logCb.onLog(lastError, "error");
                 return false;
             }
+            int fd = deviceConnection.getFileDescriptor();
+            if (logCb != null) logCb.onLog("USB Connection open OK, fd=" + fd, "success");
 
-            this.currentParsedUvc = parseDescriptors(dev, deviceConnection);
+            this.currentParsedUvc = parseDescriptors(dev, deviceConnection, logCb);
+            if (logCb != null) {
+                logCb.onLog("Parsed UVC: VC=" + currentParsedUvc.vcInterface + ", VS=" + currentParsedUvc.vsInterface + ", EP=0x" + Integer.toHexString(currentParsedUvc.endpointAddress) + ", Type=" + (currentParsedUvc.endpointAttributes == 2 ? "BULK" : "ISOC") + ", MaxPkt=" + currentParsedUvc.maxPacketSize + ", Pkts/Urb=" + currentParsedUvc.packetsPerUrb, "info");
+            }
+
             FormatDesc format = currentParsedUvc.findFormat(preferredFormat);
             if (format == null) {
-                Log.e(TAG, "Format not supported");
+                lastError = "Format " + preferredFormat + " not supported on this device";
+                if (logCb != null) logCb.onLog(lastError, "error");
                 return false;
             }
 
@@ -302,55 +358,76 @@ public class UvcController {
             if (frame == null) frame = format.getFrameDesc(format.defaultFrameIndex);
             if (frame == null && !format.frameList.isEmpty()) frame = format.frameList.get(0);
             if (frame == null) {
-                Log.e(TAG, "No frame resolution available");
+                lastError = "No frame resolution found for " + targetW + "x" + targetH;
+                if (logCb != null) logCb.onLog(lastError, "error");
                 return false;
             }
 
-            Log.i(TAG, "Selected Format: " + format.fourCc + ", Frame: " + frame.getWidth() + "x" + frame.getHeight());
+            if (logCb != null) {
+                logCb.onLog("Selected Target: " + format.fourCc + " (" + frame.getWidth() + "x" + frame.getHeight() + " @" + frame.getFps() + "fps)", "info");
+            }
 
             int vsIface = currentParsedUvc.vsInterface >= 0 ? currentParsedUvc.vsInterface : 1;
             UsbInterface uIface = dev.getInterface(vsIface);
-            deviceConnection.claimInterface(uIface, true);
+            boolean claimed = deviceConnection.claimInterface(uIface, true);
+            if (logCb != null) logCb.onLog("Claim VS Interface #" + vsIface + ": " + (claimed ? "SUCCESS" : "FAILED"), claimed ? "info" : "warn");
 
             int probeLen = currentParsedUvc.bcdUVC >= 0x0150 ? 48 : (currentParsedUvc.bcdUVC >= 0x0110 ? 34 : 26);
             byte[] probeBuf = new byte[probeLen];
             ByteBuffer pb = ByteBuffer.wrap(probeBuf).order(ByteOrder.LITTLE_ENDIAN);
 
-            deviceConnection.controlTransfer(161, 129, 256, vsIface, probeBuf, probeLen, 1500);
+            // 1. GET_CUR on VS_PROBE_CONTROL
+            int rc1 = deviceConnection.controlTransfer(161, 129, 256, vsIface, probeBuf, probeLen, 1500);
+            if (logCb != null) logCb.onLog("1. Probe GET_CUR: rc=" + rc1 + " (len=" + probeLen + ")", rc1 >= 0 ? "info" : "warn");
 
+            // 2. Configure Probe Buffer
             pb.putShort(0, (short) 1);
             pb.put(2, format.formatIndex);
             pb.put(3, frame.frameIndex);
-            pb.putInt(4, frame.defaultFrameInterval);
+            pb.putInt(4, frame.defaultFrameInterval > 0 ? frame.defaultFrameInterval : 333333);
 
-            deviceConnection.controlTransfer(33, 1, 256, vsIface, probeBuf, probeLen, 1500);
+            // 3. SET_CUR on VS_PROBE_CONTROL
+            int rc2 = deviceConnection.controlTransfer(33, 1, 256, vsIface, probeBuf, probeLen, 1500);
+            if (logCb != null) logCb.onLog("2. Probe SET_CUR: rc=" + rc2, rc2 >= 0 ? "info" : "warn");
 
-            deviceConnection.controlTransfer(161, 129, 256, vsIface, probeBuf, probeLen, 1500);
+            // 4. GET_CUR to read negotiated max payload
+            int rc3 = deviceConnection.controlTransfer(161, 129, 256, vsIface, probeBuf, probeLen, 1500);
             int negotiatedMaxPayload = pb.getInt(22);
+            if (logCb != null) logCb.onLog("3. Negotiated Payload Size: " + negotiatedMaxPayload + " bytes", "info");
             if (negotiatedMaxPayload > 0) {
                 currentParsedUvc.maxPayloadTransferSize = negotiatedMaxPayload;
             }
 
-            deviceConnection.controlTransfer(33, 1, 512, vsIface, probeBuf, probeLen, 1500);
+            // 5. SET_CUR on VS_COMMIT_CONTROL
+            int rc4 = deviceConnection.controlTransfer(33, 1, 512, vsIface, probeBuf, probeLen, 1500);
+            if (logCb != null) logCb.onLog("4. Commit SET_CUR: rc=" + rc4, rc4 >= 0 ? "info" : "warn");
 
+            // 6. Switch Interface to active AltSetting for Isochronous streaming
             if (currentParsedUvc.vsAltSetting > 0) {
                 try {
-                    deviceConnection.setInterface(uIface);
-                } catch (Exception ignored) {}
+                    boolean altOk = deviceConnection.setInterface(uIface);
+                    if (logCb != null) logCb.onLog("5. Set Interface AltSetting (" + currentParsedUvc.vsAltSetting + "): " + altOk, "info");
+                } catch (Exception e) {
+                    if (logCb != null) logCb.onLog("Set AltSetting warning: " + e.getMessage(), "warn");
+                }
             }
 
+            // Start URB Router Thread
             final int routerId = ROUTER_COUNTER.getAndIncrement();
             this.currentRouterId = routerId;
-            final int fd = deviceConnection.getFileDescriptor();
 
             new Thread(new Runnable() {
                 @Override
                 public void run() {
+                    Log.d(TAG, "URB Router listen started: id=" + routerId);
                     int res = UsbFs.urbRouterListen(fd, routerId, routerStats);
                     Log.d(TAG, "URB Router listen ended: " + res);
                 }
             }, "UrbRouter-" + routerId).start();
 
+            if (logCb != null) logCb.onLog("6. URB Router thread started (ID=" + routerId + ")", "info");
+
+            // Initialize Stream Handler
             if ("MJPG".equalsIgnoreCase(format.fourCc)) {
                 this.currentHandler = new MjpegStreamUrbHandler(
                     format, frame,
@@ -377,12 +454,19 @@ public class UvcController {
                 this.currentHandler.setSurface(this.attachedSurface);
             }
 
-            this.isStreaming = this.currentHandler.start();
+            boolean started = this.currentHandler.start();
+            if (logCb != null) {
+                logCb.onLog("7. Native Handler Start: handle=" + currentHandler.r + " (started=" + started + ")", started ? "success" : "error");
+            }
+
+            this.isStreaming = started;
             this.lastStatsTime = System.currentTimeMillis();
             this.lastUrbs = 0;
             return this.isStreaming;
         } catch (Throwable t) {
-            Log.e(TAG, "Failed to start stream", t);
+            lastError = "startStream exception: " + t.toString();
+            Log.e(TAG, lastError, t);
+            if (logCb != null) logCb.onLog(lastError, "error");
             stopStream();
             return false;
         }
@@ -477,6 +561,7 @@ public class UvcController {
 
     public boolean isStreaming() { return isStreaming; }
     public int getHandleId() { return currentHandler != null ? currentHandler.r : -1; }
+    public String getLastError() { return lastError; }
 
     public float calculateFps() {
         long now = System.currentTimeMillis();
@@ -484,7 +569,8 @@ public class UvcController {
         if (diffTime >= 1000) {
             int urbs = routerStats[0];
             int diffUrbs = urbs - lastUrbs;
-            currentFps = (diffUrbs * 1000.0f) / (diffTime * Math.max(currentParsedUvc != null ? currentParsedUvc.packetsPerUrb : 4, 1));
+            int packets = currentParsedUvc != null && currentParsedUvc.packetsPerUrb > 0 ? currentParsedUvc.packetsPerUrb : 1;
+            currentFps = (diffUrbs * 1000.0f) / (diffTime * packets);
             lastUrbs = urbs;
             lastStatsTime = now;
         }
