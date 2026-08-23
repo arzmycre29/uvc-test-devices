@@ -9,7 +9,7 @@ import com.homesoft.usb.fs.UsbFs;
 public abstract class VideoUrbHandler {
     private static final String TAG = "VideoUrbHandler";
 
-    public int r = -1; // Native handle ID
+    public int r = -1;
     public final FormatDesc formatDesc;
     public final FrameDesc frameDesc;
     public final int endpointAddress;
@@ -17,6 +17,7 @@ public abstract class VideoUrbHandler {
     public final int packetsPerUrb;
     public final int interval;
     public final int maxPayloadTransferSize;
+    public final int maxVideoFrameSize;
     public int transform = 0;
     public Surface surface;
 
@@ -26,7 +27,7 @@ public abstract class VideoUrbHandler {
 
     public FrameListener frameListener;
 
-    public VideoUrbHandler(FormatDesc formatDesc, FrameDesc frameDesc, int endpointAddress, int maxPacketSize, int packetsPerUrb, int interval, int maxPayloadTransferSize) {
+    public VideoUrbHandler(FormatDesc formatDesc, FrameDesc frameDesc, int endpointAddress, int maxPacketSize, int packetsPerUrb, int interval, int maxPayloadTransferSize, int maxVideoFrameSize) {
         this.formatDesc = formatDesc;
         this.frameDesc = frameDesc;
         this.endpointAddress = endpointAddress;
@@ -34,6 +35,7 @@ public abstract class VideoUrbHandler {
         this.packetsPerUrb = packetsPerUrb;
         this.interval = interval;
         this.maxPayloadTransferSize = maxPayloadTransferSize;
+        this.maxVideoFrameSize = maxVideoFrameSize;
     }
 
     public void setFrameListener(FrameListener listener) {
@@ -58,7 +60,7 @@ public abstract class VideoUrbHandler {
         if (this.r >= 0) {
             try {
                 int res = UsbFs.setSurface(this.r, surface, 842094169, this.transform);
-                Log.d(TAG, "UsbFs.setSurface() result: " + res);
+                Log.d(TAG, "UsbFs.setSurface(" + this.r + ") result: " + res);
                 return res == 0;
             } catch (Exception e) {
                 Log.e(TAG, "Error in setSurface", e);
