@@ -199,8 +199,9 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
             surfaceContainer.setBackgroundColor(Color.TRANSPARENT);
 
             previewSurfaceView = new SurfaceView(getActivity());
-            previewSurfaceView.setZOrderMediaOverlay(true);
-            
+            previewSurfaceView.setZOrderMediaOverlay(false);
+            previewSurfaceView.setZOrderOnTop(false);
+
             surfaceHolder = previewSurfaceView.getHolder();
             surfaceHolder.addCallback(this);
             surfaceHolder.setFormat(PixelFormat.RGBX_8888);
@@ -218,10 +219,14 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
 
             ViewGroup rootView = (ViewGroup) getActivity().getWindow().getDecorView().findViewById(android.R.id.content);
             if (rootView != null) {
-                rootView.addView(surfaceContainer, new FrameLayout.LayoutParams(
+                // Add behind WebView (index 0) so HTML UI is drawn on top
+                rootView.addView(surfaceContainer, 0, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
                 ));
+                try {
+                    getBridge().getWebView().setBackgroundColor(Color.TRANSPARENT);
+                } catch (Exception ignored) {}
             }
         } else {
             surfaceContainer.setVisibility(View.VISIBLE);
