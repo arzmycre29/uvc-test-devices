@@ -49,6 +49,10 @@
         <div class="controls-card">
           <!-- Primary Action Buttons (2x2 on Mobile, 4x1 on Desktop) -->
           <div class="actions-grid">
+            <button id="btn-test-native" class="btn btn-secondary" type="button">
+              <span class="btn-icon">⚙️</span>
+              <span class="btn-label">Test JNI Engine</span>
+            </button>
             <button id="btn-request-usb" class="btn btn-primary" type="button">
               <span class="btn-icon">🔌</span>
               <span class="btn-label">1. Request USB</span>
@@ -61,7 +65,10 @@
               <span class="btn-icon">📸</span>
               <span class="btn-label">3. Snapshot</span>
             </button>
-            <button id="btn-stop-stream" class="btn btn-danger" type="button" disabled>
+          </div>
+
+          <div class="actions-grid" style="margin-top: 6px;">
+            <button id="btn-stop-stream" class="btn btn-danger" type="button" disabled style="grid-column: span 2;">
               <span class="btn-icon">⏹️</span>
               <span class="btn-label">Stop Stream</span>
             </button>

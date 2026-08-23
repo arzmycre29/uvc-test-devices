@@ -3,6 +3,7 @@ import { registerPlugin } from "@capacitor/core";
 const UvcTester = registerPlugin("UvcTester");
 
 // DOM Elements
+const btnTestNative = document.getElementById("btn-test-native");
 const btnRequestUsb = document.getElementById("btn-request-usb");
 const btnStartStream = document.getElementById("btn-start-stream");
 const btnTakePhoto = document.getElementById("btn-take-photo");
@@ -76,6 +77,20 @@ ${logEntries || "(No events logged yet)"}
   }
 });
 
+btnTestNative.addEventListener("click", async () => {
+  log("Testing JNI Native Engine (libusbfs.so)...", "info");
+  try {
+    const res = await UvcTester.testNative();
+    if (res.success) {
+      log(`JNI Engine Loaded OK! ABI: ${res.abi}`, "success");
+    } else {
+      log(`JNI Engine Load Failed: ${res.error || "Unknown"}`, "error");
+    }
+  } catch (err) {
+    log(`Test Native Exception: ${err.message || err}`, "error");
+  }
+});
+
 async function checkDeviceState() {
   try {
     const res = await UvcTester.checkDevice();
@@ -138,7 +153,6 @@ btnStartStream.addEventListener("click", async () => {
       btnTakePhoto.disabled = false;
       btnStopStream.disabled = false;
 
-      // Real-time stats polling
       if (statsInterval) clearInterval(statsInterval);
       statsInterval = setInterval(async () => {
         try {
@@ -198,6 +212,10 @@ btnStopStream.addEventListener("click", async () => {
 
 // Auto check device on page load
 window.addEventListener("DOMContentLoaded", () => {
-  log("UVC Kernel Tester loaded. Checking USB devices...", "info");
-  checkDeviceState();
+  log("UVC Kernel Tester UI ready. Tap 'Test JNI Engine' or 'Request USB'.", "info");
+  try {
+    checkDeviceState();
+  } catch (e) {
+    log(`Initial device check error: ${e.message}`, "warn");
+  }
 });

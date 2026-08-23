@@ -556,3 +556,11 @@ body {
   color: #34d399;
   border-color: rgba(16, 185, 129, 0.5);
 }
+.btn-secondary {
+  background: #3f3f46;
+  color: #e4e4e7;
+}
+
+.btn-secondary:not(:disabled):hover {
+  background: #52525b;
+}

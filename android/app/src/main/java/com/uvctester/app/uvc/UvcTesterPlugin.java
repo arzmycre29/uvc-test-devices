@@ -4,6 +4,7 @@ import android.Manifest;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.hardware.usb.UsbDevice;
+import android.os.Build;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Gravity;
@@ -21,6 +22,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+import com.homesoft.usb.fs.UsbFs;
 
 @CapacitorPlugin(
     name = "UvcTester",
@@ -45,23 +47,38 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
     private boolean mirror = false;
     private PluginCall activeStartCall;
 
-    @Override
-    public void load() {
-        super.load();
-        this.controller = UvcController.getInstance(getContext());
+    private UvcController getController() {
+        if (controller == null) {
+            controller = UvcController.getInstance(getContext());
+        }
+        return controller;
+    }
+
+    @PluginMethod
+    public void testNative(PluginCall call) {
+        try {
+            boolean loaded = UsbFs.loadNative();
+            JSObject ret = new JSObject();
+            ret.put("success", loaded);
+            ret.put("error", UsbFs.nativeLoadError != null ? UsbFs.nativeLoadError : "");
+            ret.put("abi", Build.SUPPORTED_ABIS != null && Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "unknown");
+            call.resolve(ret);
+        } catch (Throwable t) {
+            call.reject("Native test exception: " + t.toString());
+        }
     }
 
     @PluginMethod
     public void checkDevice(PluginCall call) {
         try {
-            UsbDevice dev = controller.findUvcDevice();
+            UsbDevice dev = getController().findUvcDevice();
             JSObject ret = new JSObject();
             boolean hasRuntimePerms = getPermissionState("camera") == PermissionState.GRANTED;
             ret.put("runtimePermissions", hasRuntimePerms);
 
             if (dev != null) {
                 ret.put("connected", true);
-                ret.put("permission", controller.hasPermission(dev) && hasRuntimePerms);
+                ret.put("permission", getController().hasPermission(dev) && hasRuntimePerms);
                 ret.put("deviceName", dev.getProductName() != null ? dev.getProductName() : dev.getDeviceName());
                 ret.put("vendorId", dev.getVendorId());
                 ret.put("productId", dev.getProductId());
@@ -101,7 +118,7 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
 
     private void requestUsbPermission(PluginCall call) {
         try {
-            UsbDevice dev = controller.findUvcDevice();
+            UsbDevice dev = getController().findUvcDevice();
             if (dev == null) {
                 JSObject ret = new JSObject();
                 ret.put("granted", false);
@@ -110,7 +127,7 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
                 return;
             }
 
-            controller.requestPermission(dev, getActivity(), granted -> {
+            getController().requestPermission(dev, getActivity(), granted -> {
                 JSObject ret = new JSObject();
                 ret.put("granted", granted);
                 ret.put("deviceName", dev.getProductName() != null ? dev.getProductName() : dev.getDeviceName());
@@ -131,14 +148,14 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
 
         getActivity().runOnUiThread(() -> {
             try {
-                UsbDevice dev = controller.findUvcDevice();
+                UsbDevice dev = getController().findUvcDevice();
                 if (dev == null) {
                     call.reject("No USB Camera connected");
                     return;
                 }
 
-                if (!controller.hasPermission(dev)) {
-                    controller.requestPermission(dev, getActivity(), granted -> {
+                if (!getController().hasPermission(dev)) {
+                    getController().requestPermission(dev, getActivity(), granted -> {
                         if (granted) {
                             getActivity().runOnUiThread(() -> setupSurfaceAndStart(dev));
                         } else {
@@ -187,11 +204,11 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
         }
 
         if (surfaceHolder != null && surfaceHolder.getSurface().isValid()) {
-            boolean ok = controller.startStream(dev, surfaceHolder.getSurface(), targetW, targetH, preferredFormat, mirror);
+            boolean ok = getController().startStream(dev, surfaceHolder.getSurface(), targetW, targetH, preferredFormat, mirror);
             if (activeStartCall != null) {
                 JSObject ret = new JSObject();
                 ret.put("success", ok);
-                ret.put("handleId", controller.getHandleId());
+                ret.put("handleId", getController().getHandleId());
                 activeStartCall.resolve(ret);
                 activeStartCall = null;
             }
@@ -202,7 +219,9 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
     public void stopPreview(PluginCall call) {
         getActivity().runOnUiThread(() -> {
             try {
-                controller.stopStream();
+                if (controller != null) {
+                    controller.stopStream();
+                }
                 if (surfaceContainer != null) {
                     surfaceContainer.setVisibility(View.GONE);
                 }
@@ -218,7 +237,7 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
     @PluginMethod
     public void takePhoto(PluginCall call) {
         boolean m = call.getBoolean("mirror", this.mirror);
-        controller.capturePhoto(m, new UvcController.CaptureCallback() {
+        getController().capturePhoto(m, new UvcController.CaptureCallback() {
             @Override
             public void onSuccess(String dataUrl, int width, int height) {
                 JSObject ret = new JSObject();
@@ -239,22 +258,22 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
     @PluginMethod
     public void getStats(PluginCall call) {
         JSObject ret = new JSObject();
-        ret.put("streaming", controller.isStreaming());
-        ret.put("fps", controller.calculateFps());
-        ret.put("urbs", controller.getUrbsCount());
+        ret.put("streaming", controller != null && controller.isStreaming());
+        ret.put("fps", controller != null ? controller.calculateFps() : 0.0f);
+        ret.put("urbs", controller != null ? controller.getUrbsCount() : 0);
         call.resolve(ret);
     }
 
     @Override
     public void surfaceCreated(@NonNull SurfaceHolder holder) {
         this.surfaceHolder = holder;
-        UsbDevice dev = controller.findUvcDevice();
-        if (dev != null && controller.hasPermission(dev)) {
-            boolean ok = controller.startStream(dev, holder.getSurface(), targetW, targetH, preferredFormat, mirror);
+        UsbDevice dev = getController().findUvcDevice();
+        if (dev != null && getController().hasPermission(dev)) {
+            boolean ok = getController().startStream(dev, holder.getSurface(), targetW, targetH, preferredFormat, mirror);
             if (activeStartCall != null) {
                 JSObject ret = new JSObject();
                 ret.put("success", ok);
-                ret.put("handleId", controller.getHandleId());
+                ret.put("handleId", getController().getHandleId());
                 activeStartCall.resolve(ret);
                 activeStartCall = null;
             }
@@ -264,24 +283,28 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
     @Override
     public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
         this.surfaceHolder = holder;
-        controller.setSurface(holder.getSurface());
+        if (controller != null) {
+            controller.setSurface(holder.getSurface());
+        }
     }
 
     @Override
     public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
-        controller.setSurface(null);
+        if (controller != null) {
+            controller.setSurface(null);
+        }
         this.surfaceHolder = null;
     }
 
     @Override
     protected void handleOnPause() {
         super.handleOnPause();
-        controller.stopStream();
+        if (controller != null) controller.stopStream();
     }
 
     @Override
     protected void handleOnDestroy() {
         super.handleOnDestroy();
-        controller.stopStream();
+        if (controller != null) controller.stopStream();
     }
 }

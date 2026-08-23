@@ -95,16 +95,18 @@ public class UvcController {
     private UvcController(Context context) {
         this.context = context;
         this.usbManager = (UsbManager) context.getSystemService(Context.USB_SERVICE);
+    }
+
+    public String testNativeLoad() {
         try {
-            boolean loaded = UsbFs.loadNative();
-            if (loaded) {
-                UsbFs.init(context);
-                Log.d(TAG, "Native UsbFs initialized");
+            boolean ok = UsbFs.loadNative();
+            if (ok) {
+                return "SUCCESS: libusbfs.so loaded without errors";
             } else {
-                Log.e(TAG, "Could not load libusbfs.so: " + UsbFs.nativeLoadError);
+                return "ERROR: " + UsbFs.nativeLoadError;
             }
         } catch (Throwable t) {
-            Log.e(TAG, "Native UsbFs init exception", t);
+            return "EXCEPTION: " + t.toString();
         }
     }
 
