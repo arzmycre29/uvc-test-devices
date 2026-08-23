@@ -23,6 +23,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 import com.homesoft.usb.fs.UsbFs;
+import com.uvctester.app.media.UvcVideoRecorder;
 
 @CapacitorPlugin(
     name = "UvcTester",
@@ -308,12 +309,14 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
         boolean m = call.getBoolean("mirror", this.mirror);
         getController().capturePhoto(m, new UvcController.CaptureCallback() {
             @Override
-            public void onSuccess(String dataUrl, int width, int height) {
+            public void onSuccess(String dataUrl, int width, int height, String savedPath, String savedFileName) {
                 JSObject ret = new JSObject();
                 ret.put("success", true);
                 ret.put("dataUrl", dataUrl);
                 ret.put("width", width);
                 ret.put("height", height);
+                ret.put("savedPath", savedPath);
+                ret.put("savedFileName", savedFileName);
                 call.resolve(ret);
             }
 
@@ -325,9 +328,58 @@ public class UvcTesterPlugin extends Plugin implements SurfaceHolder.Callback {
     }
 
     @PluginMethod
+    public void startRecording(PluginCall call) {
+        getController().startRecording(new UvcVideoRecorder.RecordCallback() {
+            @Override
+            public void onStarted(String filePath, String fileName) {
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                ret.put("filePath", filePath);
+                ret.put("fileName", fileName);
+                call.resolve(ret);
+            }
+
+            @Override
+            public void onFinished(String filePath, String fileName, long durationMs, int frameCount) {
+            }
+
+            @Override
+            public void onError(String error) {
+                call.reject(error);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void stopRecording(PluginCall call) {
+        getController().stopRecording(new UvcVideoRecorder.RecordCallback() {
+            @Override
+            public void onStarted(String filePath, String fileName) {
+            }
+
+            @Override
+            public void onFinished(String filePath, String fileName, long durationMs, int frameCount) {
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                ret.put("filePath", filePath);
+                ret.put("fileName", fileName);
+                ret.put("durationMs", durationMs);
+                ret.put("frameCount", frameCount);
+                call.resolve(ret);
+            }
+
+            @Override
+            public void onError(String error) {
+                call.reject(error);
+            }
+        });
+    }
+
+    @PluginMethod
     public void getStats(PluginCall call) {
         JSObject ret = new JSObject();
         ret.put("streaming", controller != null && controller.isStreaming());
+        ret.put("recording", controller != null && controller.isRecording());
         ret.put("fps", controller != null ? controller.calculateFps() : 0.0f);
         ret.put("urbs", controller != null ? controller.getUrbsCount() : 0);
         call.resolve(ret);

@@ -7,6 +7,8 @@ const btnTestNative = document.getElementById("btn-test-native");
 const btnRequestUsb = document.getElementById("btn-request-usb");
 const btnStartStream = document.getElementById("btn-start-stream");
 const btnTakePhoto = document.getElementById("btn-take-photo");
+const btnRecordVideo = document.getElementById("btn-record-video");
+const btnRecordLabel = document.getElementById("btn-record-label");
 const btnStopStream = document.getElementById("btn-stop-stream");
 const btnClearLog = document.getElementById("btn-clear-log");
 const btnCopyLog = document.getElementById("btn-copy-log");
@@ -18,6 +20,8 @@ const mirrorCheckbox = document.getElementById("mirror-checkbox");
 const deviceBadge = document.getElementById("device-status-badge");
 const deviceNameText = document.getElementById("device-name-text");
 const liveIndicator = document.getElementById("live-indicator");
+const recIndicator = document.getElementById("rec-indicator");
+const recTimer = document.getElementById("rec-timer");
 const fpsIndicator = document.getElementById("fps-indicator");
 const consoleLogs = document.getElementById("console-logs");
 const cameraViewport = document.getElementById("camera-viewport");
@@ -25,9 +29,14 @@ const viewportPlaceholder = document.getElementById("viewport-placeholder");
 const snapshotImg = document.getElementById("snapshot-img");
 const snapshotBox = document.getElementById("snapshot-box");
 const photoDimensions = document.getElementById("photo-dimensions");
+const mediaSaveToast = document.getElementById("media-save-toast");
+const mediaSavePath = document.getElementById("media-save-path");
 
 let statsInterval = null;
+let recInterval = null;
+let recSeconds = 0;
 let isStreaming = false;
+let isRecording = false;
 
 function log(msg, type = "info") {
   const time = new Date().toTimeString().split(" ")[0];
@@ -36,6 +45,12 @@ function log(msg, type = "info") {
   div.textContent = `[${time}] [${type.toUpperCase()}] ${msg}`;
   consoleLogs.appendChild(div);
   consoleLogs.scrollTop = consoleLogs.scrollHeight;
+}
+
+function showMediaSave(path) {
+  if (!path) return;
+  mediaSavePath.textContent = `Auto-saved: ${path}`;
+  mediaSaveToast.style.display = "block";
 }
 
 function getViewportBounds() {
@@ -177,6 +192,7 @@ btnStartStream.addEventListener("click", async () => {
       
       btnStartStream.disabled = true;
       btnTakePhoto.disabled = false;
+      btnRecordVideo.disabled = false;
       btnStopStream.disabled = false;
 
       if (statsInterval) clearInterval(statsInterval);
@@ -206,6 +222,10 @@ btnTakePhoto.addEventListener("click", async () => {
     
     if (res.success && res.dataUrl) {
       log(`SNAPSHOT CAPTURED: ${res.width}x${res.height}, Size: ${(res.dataUrl.length / 1024).toFixed(1)} KB`, "success");
+      if (res.savedPath) {
+        log(`💾 PHOTO SAVED TO GALLERY: ${res.savedPath}`, "success");
+        showMediaSave(res.savedPath);
+      }
       snapshotImg.src = res.dataUrl;
       snapshotImg.style.display = "block";
       const emptyText = snapshotBox.querySelector(".empty-state");
@@ -219,9 +239,71 @@ btnTakePhoto.addEventListener("click", async () => {
   }
 });
 
+// Video Recording Toggle
+btnRecordVideo.addEventListener("click", async () => {
+  if (!isRecording) {
+    // Start Recording
+    log("Starting hardware video recording (H.264 MP4)...", "info");
+    try {
+      const res = await UvcTester.startRecording();
+      if (res && res.success) {
+        isRecording = true;
+        recSeconds = 0;
+        recTimer.textContent = "00:00";
+        recIndicator.style.display = "inline-flex";
+        btnRecordVideo.classList.add("recording");
+        btnRecordLabel.textContent = "Stop Recording";
+        log(`🔴 RECORDING STARTED: ${res.filePath || res.fileName}`, "success");
+
+        if (recInterval) clearInterval(recInterval);
+        recInterval = setInterval(() => {
+          recSeconds++;
+          const m = String(Math.floor(recSeconds / 60)).padStart(2, "0");
+          const s = String(recSeconds % 60).padStart(2, "0");
+          recTimer.textContent = `${m}:${s}`;
+        }, 1000);
+      } else {
+        log(`Start record failed: ${res ? res.error : "Unknown error"}`, "error");
+      }
+    } catch (err) {
+      log(`Start record exception: ${err.message || err}`, "error");
+    }
+  } else {
+    // Stop Recording
+    log("Stopping video recording and finalizing MP4 file...", "info");
+    try {
+      if (recInterval) clearInterval(recInterval);
+      recIndicator.style.display = "none";
+      btnRecordVideo.classList.remove("recording");
+      btnRecordLabel.textContent = "Record Video";
+
+      const res = await UvcTester.stopRecording();
+      isRecording = false;
+      if (res && res.success) {
+        const sec = ((res.durationMs || 0) / 1000).toFixed(1);
+        log(`💾 VIDEO SAVED TO GALLERY: ${res.filePath || res.fileName} (${sec}s, ${res.frameCount || 0} frames)`, "success");
+        showMediaSave(res.filePath || res.fileName);
+      } else {
+        log(`Stop record warning: ${res ? res.error : "Unknown"}`, "warn");
+      }
+    } catch (err) {
+      isRecording = false;
+      log(`Stop record exception: ${err.message || err}`, "error");
+    }
+  }
+});
+
 btnStopStream.addEventListener("click", async () => {
   log("Stopping stream & releasing hardware...", "info");
   try {
+    if (isRecording) {
+      if (recInterval) clearInterval(recInterval);
+      recIndicator.style.display = "none";
+      btnRecordVideo.classList.remove("recording");
+      btnRecordLabel.textContent = "Record Video";
+      isRecording = false;
+    }
+
     isStreaming = false;
     if (statsInterval) clearInterval(statsInterval);
     await UvcTester.stopPreview();
@@ -229,10 +311,12 @@ btnStopStream.addEventListener("click", async () => {
     log("Stream stopped successfully.", "info");
     viewportPlaceholder.style.visibility = "visible";
     liveIndicator.style.display = "none";
+    recIndicator.style.display = "none";
     fpsIndicator.style.display = "none";
     
     btnStartStream.disabled = false;
     btnTakePhoto.disabled = true;
+    btnRecordVideo.disabled = true;
     btnStopStream.disabled = true;
   } catch (err) {
     log(`Stop stream exception: ${err.message || err}`, "error");

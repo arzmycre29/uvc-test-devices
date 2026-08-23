@@ -27,6 +27,8 @@ import com.homesoft.usb.fs.UsbFs;
 import com.homesoft.usb.fs.uvc.MjpegStreamUrbHandler;
 import com.homesoft.usb.fs.uvc.VideoUrbHandler;
 import com.homesoft.usb.fs.uvc.YuvStreamUrbHandler;
+import com.uvctester.app.media.MediaSaver;
+import com.uvctester.app.media.UvcVideoRecorder;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -56,6 +58,8 @@ public class UvcController {
     private long lastStatsTime = 0;
     private float currentFps = 0.0f;
     private String lastError = "";
+
+    private UvcVideoRecorder videoRecorder;
 
     public interface LogCallback {
         void onLog(String message, String type);
@@ -89,7 +93,7 @@ public class UvcController {
     }
 
     public interface CaptureCallback {
-        void onSuccess(String dataUrl, int width, int height);
+        void onSuccess(String dataUrl, int width, int height, String savedPath, String savedFileName);
         void onError(String message);
     }
 
@@ -543,10 +547,20 @@ public class UvcController {
                             }
                             int w = bmp != null ? bmp.getWidth() : currentHandler.getWidth();
                             int h = bmp != null ? bmp.getHeight() : currentHandler.getHeight();
+
+                            // Save photo to DCIM/Camera via MediaStore
+                            MediaSaver.SavedMediaResult saved = MediaSaver.savePhotoToDcim(context, finalBytes);
+
                             String dataUrl = "data:image/jpeg;base64," + Base64.encodeToString(finalBytes, Base64.NO_WRAP);
-                            mainHandler.post(() -> callback.onSuccess(dataUrl, w, h));
+                            mainHandler.post(() -> callback.onSuccess(
+                                dataUrl,
+                                w,
+                                h,
+                                saved.filePath != null ? saved.filePath : "",
+                                saved.fileName != null ? saved.fileName : ""
+                            ));
                         } catch (Exception e) {
-                            mainHandler.post(() -> callback.onError("Encode error: " + e.getMessage()));
+                            mainHandler.post(() -> callback.onError("Encode/Save error: " + e.getMessage()));
                         }
                     }).start();
                 }
@@ -556,7 +570,41 @@ public class UvcController {
         currentHandler.triggerSnapshot();
     }
 
+    public synchronized void startRecording(final UvcVideoRecorder.RecordCallback callback) {
+        if (currentHandler == null || !isStreaming) {
+            if (callback != null) callback.onError("Camera not streaming");
+            return;
+        }
+
+        if (videoRecorder != null && videoRecorder.isRecording()) {
+            if (callback != null) callback.onError("Already recording");
+            return;
+        }
+
+        int w = currentHandler.getWidth();
+        int h = currentHandler.getHeight();
+        this.videoRecorder = new UvcVideoRecorder(context, currentHandler, w, h, 30);
+        this.videoRecorder.start(callback);
+    }
+
+    public synchronized void stopRecording(final UvcVideoRecorder.RecordCallback callback) {
+        if (videoRecorder == null || !videoRecorder.isRecording()) {
+            if (callback != null) callback.onError("Not recording");
+            return;
+        }
+
+        videoRecorder.stop(callback);
+        videoRecorder = null;
+    }
+
+    public synchronized boolean isRecording() {
+        return videoRecorder != null && videoRecorder.isRecording();
+    }
+
     public synchronized void stopStream() {
+        if (isRecording()) {
+            try { stopRecording(null); } catch (Exception ignored) {}
+        }
         this.isStreaming = false;
         if (currentHandler != null) {
             try { currentHandler.stop(); } catch (Exception ignored) {}

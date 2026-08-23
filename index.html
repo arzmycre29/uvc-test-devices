@@ -35,8 +35,13 @@
             
             <!-- Live Overlays -->
             <div class="viewport-overlays">
-              <div class="overlay-pill live-pill" id="live-indicator" style="display: none;">
-                <span class="pulse-dot"></span> LIVE
+              <div class="overlay-left">
+                <div class="overlay-pill live-pill" id="live-indicator" style="display: none;">
+                  <span class="pulse-dot"></span> LIVE
+                </div>
+                <div class="overlay-pill rec-pill" id="rec-indicator" style="display: none;">
+                  <span class="pulse-red-dot"></span> REC <span id="rec-timer">00:00</span>
+                </div>
               </div>
               <div class="overlay-pill fps-pill" id="fps-indicator" style="display: none;">
                 0 FPS
@@ -63,12 +68,17 @@
             </button>
             <button id="btn-take-photo" class="btn btn-warning" type="button" disabled>
               <span class="btn-icon">📸</span>
-              <span class="btn-label">3. Snapshot</span>
+              <span class="btn-label">3. Photo</span>
             </button>
           </div>
 
-          <div class="actions-grid" style="margin-top: 6px;">
-            <button id="btn-stop-stream" class="btn btn-danger" type="button" disabled style="grid-column: span 2;">
+          <!-- Secondary Actions (Record Video & Stop Stream) -->
+          <div class="actions-grid" style="margin-top: 4px;">
+            <button id="btn-record-video" class="btn btn-rec" type="button" disabled>
+              <span class="btn-icon">🔴</span>
+              <span id="btn-record-label" class="btn-label">Record Video</span>
+            </button>
+            <button id="btn-stop-stream" class="btn btn-danger" type="button" disabled>
               <span class="btn-icon">⏹️</span>
               <span class="btn-label">Stop Stream</span>
             </button>
@@ -114,15 +124,18 @@
         <div class="card snapshot-card">
           <div class="card-header">
             <div class="card-title">
-              <span>🖼️ Captured Photo</span>
+              <span>🖼️ Captured Media (Auto-saved DCIM/Camera)</span>
             </div>
             <span id="photo-dimensions" class="dim-badge">-</span>
           </div>
           <div class="snapshot-body" id="snapshot-box">
             <div class="empty-state">
-              <span>No photo captured yet</span>
+              <span>No media captured yet</span>
             </div>
             <img id="snapshot-img" src="" alt="Captured Frame" style="display: none;" />
+          </div>
+          <div id="media-save-toast" class="media-save-info" style="display: none;">
+            📁 <span id="media-save-path">DCIM/Camera</span>
           </div>
         </div>
 
