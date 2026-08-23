@@ -1,6 +1,7 @@
 package com.homesoft.usb.fs;
 
 import android.content.Context;
+import android.util.Log;
 import android.view.Surface;
 import com.homesoft.usb.fs.uvc.IYuv420Recorder;
 import com.homesoft.usb.fs.uvc.MediaCodecUrbHandler;
@@ -9,8 +10,22 @@ import com.homesoft.usb.fs.uvc.PcmAudioUrbHandler;
 import com.homesoft.usb.fs.uvc.YuvStreamUrbHandler;
 
 public abstract class UsbFs {
-    static {
-        System.loadLibrary("usbfs");
+    private static final String TAG = "UsbFs";
+    public static boolean isNativeLoaded = false;
+    public static String nativeLoadError = null;
+
+    public static synchronized boolean loadNative() {
+        if (isNativeLoaded) return true;
+        try {
+            System.loadLibrary("usbfs");
+            isNativeLoaded = true;
+            Log.d(TAG, "libusbfs.so loaded successfully");
+            return true;
+        } catch (Throwable t) {
+            nativeLoadError = t.getMessage() != null ? t.getMessage() : t.toString();
+            Log.e(TAG, "Failed to load libusbfs.so: " + nativeLoadError, t);
+            return false;
+        }
     }
 
     public static native int claimInterface(int i, int i2);
